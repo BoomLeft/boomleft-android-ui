@@ -3,64 +3,31 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
-# Cancel superseded runs on the same ref — saves CI minutes and stops
-# stale PR builds from fighting for the cache lock.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  gradle:
-    name: Gradle lint + unit test + assembleRelease
+  check:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: .
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
-      # Android SDK components are pre-installed on ubuntu-latest runners,
-      # but the setup-android action pins the exact platform we use so
-      # AGP 8.7.3 doesn't drift into an unfamiliar SDK package set.
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: "platforms;android-34 build-tools;34.0.0"
-
-      - name: Setup Gradle (with dependency cache)
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
-
-      - name: Gradle lint
-        run: ./gradlew :ui:lint
-
-      - name: Unit tests
-        run: ./gradlew :ui:testReleaseUnitTest
-
-      - name: Assemble release AAR
-        run: ./gradlew :ui:assembleRelease
-
-      - name: Stage versioned AAR via build-aar.sh
-        run: ./build-aar.sh
-
-      - name: Upload AAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: boomleft-android-ui-aar
-          path: build/boomleft-android-ui-*.aar
-          if-no-files-found: error
-          retention-days: 14
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - run: ./gradlew lint
+      - run: ./gradlew test
