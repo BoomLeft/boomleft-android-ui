@@ -1,0 +1,13 @@
+# Gradle build outputs — AARs are produced on-demand via build-aar.sh.
+.gradle/
+build/
+ui/build/
+
+# Local Gradle / IDE metadata
+local.properties
+*.iml
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db

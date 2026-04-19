@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimal manifest for the boomleft-android-ui library AAR.
+
+  The library declares no permissions, no components, and no features:
+  it ships only compiled Kotlin classes. Consumer apps supply their own
+  AndroidManifest.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
