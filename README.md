@@ -5,7 +5,7 @@ UI-layer privacy primitives shared across the BoomLeft Android apps
 (Voice, Scratchpad, Scanner, and any future Kotlin-ish BoomLeft app).
 
 This is a sibling to
-[`PrivacySuite-Core-SDK`](https://github.com/mkfnch/PrivacySuite-Core-SDK);
+[`PrivacySuite-Core-SDK`](https://github.com/BoomLeft/PrivacySuite-Core-SDK);
 the core SDK supplies the cross-platform Rust crypto + networking primitives
 (AEAD, Argon2id, DoH, OHTTP, Tor), while `boomleft-android-ui` supplies the
 Android view-layer privacy helpers that don't belong in a cross-platform
