@@ -7,7 +7,6 @@ package com.boomleft.androidui
 
 import android.app.Activity
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -27,7 +26,9 @@ import androidx.lifecycle.LifecycleOwner
  *    - and content rendering into the recent-apps switcher thumbnail
  *      and on non-secure external displays.
  *    On GrapheneOS this is the canonical mechanism for preventing
- *    casual OS-level capture of sensitive UI.
+ *    casual OS-level capture of sensitive UI. The flag is reapplied
+ *    on every `ON_RESUME` so that buggy or hostile host code that
+ *    clears it cannot leave the window unprotected.
  *
  * 2. **Opaque overlay on pause.** Even with `FLAG_SECURE`, some device
  *    OEMs have historically shown a blurred / cached frame in the
@@ -56,7 +57,9 @@ import androidx.lifecycle.LifecycleOwner
  *
  * To disable at runtime (for example, in a debug build or when the user
  * opts out), call [setEnabled] with `false`. The observer stays attached
- * but becomes a no-op; calling `setEnabled(true)` re-arms it.
+ * but becomes a no-op; calling `setEnabled(true)` re-arms it and, if the
+ * Activity is currently paused, immediately re-attaches the overlay so
+ * there is no protection gap during the disable→enable→pause window.
  *
  * ## Thread safety
  *
@@ -81,7 +84,10 @@ import androidx.lifecycle.LifecycleOwner
  *                 finishing.
  * @param overlayColor the solid color painted over the content during
  *                     the paused state. Defaults to opaque black to
- *                     maximize contrast with any cached frame.
+ *                     maximize contrast with any cached frame. **Must be
+ *                     fully opaque** (alpha == 0xFF); a translucent color
+ *                     would silently leak the underlying UI through the
+ *                     overlay and is rejected with `IllegalArgumentException`.
  */
 public class PrivacyScreenOverlay
 @JvmOverloads
@@ -90,25 +96,26 @@ constructor(
     private val overlayColor: Int = Color.BLACK,
 ) : DefaultLifecycleObserver {
 
-    /**
-     * The overlay view attached to the Activity's decor content root
-     * while paused. Lazily created on first pause; detached on resume.
-     * Null when no overlay is currently attached.
-     */
-    private var overlayView: View? = null
-
-    /**
-     * Runtime on/off switch. When `false`, the observer callbacks are
-     * no-ops and `FLAG_SECURE` is cleared. See [setEnabled].
-     */
-    private var enabled: Boolean = true
-
     init {
+        // Reject translucent overlay colors at construction time. A
+        // partially-transparent overlay is a security defect, not a
+        // styling choice — refuse rather than silently degrade the
+        // privacy guarantee.
+        requireOpaqueOverlayColor(overlayColor)
         // Apply FLAG_SECURE up front. Consumer apps typically add this
         // observer in `onCreate`, which means the flag takes effect
         // before the first frame is ever rendered.
         applySecureFlag(secure = true)
     }
+
+    /** The overlay view attached to the content root while paused, or null. */
+    private var overlayView: View? = null
+
+    /** Tracks the most recent lifecycle pause/resume edge (main-thread only). */
+    private var paused: Boolean = false
+
+    /** Runtime on/off switch (main-thread only). See [setEnabled]. */
+    private var enabled: Boolean = true
 
     /**
      * Enable or disable the privacy screen at runtime.
@@ -121,8 +128,7 @@ constructor(
      * When re-enabled:
      * - `FLAG_SECURE` is re-applied.
      * - If the Activity is currently paused, the overlay is attached
-     *   on the next `ON_PAUSE` event (we do not retro-attach; the
-     *   existing Activity state drives the next transition).
+     *   immediately so there is no exposure window.
      *
      * @param value `true` to arm both defenses; `false` to disable them.
      */
@@ -130,6 +136,7 @@ constructor(
         enabled = value
         if (value) {
             applySecureFlag(secure = true)
+            if (paused) attachOverlay()
         } else {
             applySecureFlag(secure = false)
             detachOverlay()
@@ -139,29 +146,21 @@ constructor(
     /** @return `true` if the privacy screen is currently armed. */
     public fun isEnabled(): Boolean = enabled
 
-    /**
-     * Called by the AndroidX Lifecycle machinery when the Activity
-     * transitions to `ON_PAUSE`. Attaches the opaque overlay.
-     */
+    override fun onResume(owner: LifecycleOwner) {
+        paused = false
+        if (!enabled) return
+        // Defense-in-depth: reapply FLAG_SECURE in case host code (or a
+        // misbehaving library) cleared it while we were paused.
+        applySecureFlag(secure = true)
+        detachOverlay()
+    }
+
     override fun onPause(owner: LifecycleOwner) {
+        paused = true
         if (!enabled) return
         attachOverlay()
     }
 
-    /**
-     * Called by the AndroidX Lifecycle machinery when the Activity
-     * transitions to `ON_RESUME`. Removes the overlay if present.
-     */
-    override fun onResume(owner: LifecycleOwner) {
-        if (!enabled) return
-        detachOverlay()
-    }
-
-    /**
-     * Called when the owning Lifecycle is destroyed. Guarantees no
-     * dangling overlay view is left attached to a destroyed Activity's
-     * view hierarchy.
-     */
     override fun onDestroy(owner: LifecycleOwner) {
         detachOverlay()
     }
@@ -170,16 +169,13 @@ constructor(
 
     /**
      * Toggle `WindowManager.LayoutParams.FLAG_SECURE` on the Activity
-     * window. A no-op if the Activity is finishing.
+     * window. A no-op if the Activity is finishing or has no window.
      */
     private fun applySecureFlag(secure: Boolean) {
         if (activity.isFinishing) return
         val window = activity.window ?: return
         if (secure) {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE,
-            )
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
@@ -201,15 +197,19 @@ constructor(
             ?: return
 
         val view = View(activity).apply {
-            background = ColorDrawable(overlayColor)
-            // FrameLayout params give us full-bleed coverage.
+            setBackgroundColor(overlayColor)
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            // Swallow touches so nothing beneath reacts while paused.
+            // Swallow input so nothing beneath reacts while paused.
             isClickable = true
             isFocusable = true
+            // Hide both the overlay and everything beneath it from
+            // accessibility services. A paused Activity should not be
+            // explorable through TalkBack while the privacy screen is up.
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            contentDescription = null
         }
 
         contentRoot.addView(view)
@@ -217,7 +217,7 @@ constructor(
     }
 
     /**
-     * Remove the overlay from the Activity's content root if present.
+     * Remove the overlay from its parent if present.
      */
     private fun detachOverlay() {
         val view = overlayView ?: return
@@ -231,4 +231,18 @@ constructor(
     // belongs in an instrumented test (androidTest) — deliberately not
     // added in this initial Phase 2 port; will land alongside the first
     // consumer-app migration PR that adds an emulator to CI.
+}
+
+/**
+ * Reject translucent ARGB ints. Top-level + `internal` so the policy
+ * is unit-testable on the host JVM without standing up an Activity
+ * (the rest of [PrivacyScreenOverlay] requires the Android runtime).
+ *
+ * @throws IllegalArgumentException if [color]'s alpha channel is < 0xFF.
+ */
+internal fun requireOpaqueOverlayColor(color: Int) {
+    val alpha = (color ushr 24) and 0xFF
+    require(alpha == 0xFF) {
+        "overlayColor must be fully opaque (alpha == 0xFF); got alpha=$alpha"
+    }
 }

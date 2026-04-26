@@ -25,6 +25,9 @@ import org.junit.Test
  * - [PrivacyScreenOverlay]'s class loader can find `DefaultLifecycleObserver`
  *   so a packaging regression (missing compileOnly Lifecycle dep) is
  *   caught without needing to build against an Android device.
+ * - The constructor's opaque-color validation is enforced — the most
+ *   load-bearing piece of input validation in the library, since a
+ *   translucent overlay would silently leak the underlying UI.
  */
 class PrivacyScreenOverlayTest {
 
@@ -57,5 +60,51 @@ class PrivacyScreenOverlayTest {
             "PrivacyScreenOverlay must implement DefaultLifecycleObserver",
             observerIface.isAssignableFrom(clazz),
         )
+    }
+
+    @Test
+    fun `PrivacyScreenOverlay class is final and not subclassable`() {
+        // Subclassing the overlay would let a hostile consumer override
+        // attach/detach to never actually obscure content. Kotlin classes
+        // are final by default; this guard fails loudly if someone marks
+        // it `open` later without thinking through the consequences.
+        val clazz = Class.forName("com.boomleft.androidui.PrivacyScreenOverlay")
+        assertTrue(
+            "PrivacyScreenOverlay must remain final (Kotlin default)",
+            java.lang.reflect.Modifier.isFinal(clazz.modifiers),
+        )
+    }
+
+    @Test
+    fun `opaque colors are accepted`() {
+        // The full opaque-alpha range — including pure black and the
+        // pure-white ARGB int — must round-trip through the validator
+        // without throwing.
+        requireOpaqueOverlayColor(0xFF000000.toInt())
+        requireOpaqueOverlayColor(0xFFFFFFFF.toInt())
+        requireOpaqueOverlayColor(0xFF123456.toInt())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `fully transparent color is rejected`() {
+        // 0x00000000 is Color.TRANSPARENT — the most dangerous default
+        // a caller could pass. Must throw, not silently install a
+        // see-through "privacy" overlay.
+        requireOpaqueOverlayColor(0x00000000)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `semi-transparent color is rejected`() {
+        // 50%-alpha black still leaks the underlying UI. The validator
+        // must enforce the full 0xFF alpha invariant, not "anything
+        // mostly opaque".
+        requireOpaqueOverlayColor(0x80000000.toInt())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `near-opaque color is rejected`() {
+        // One-bit-shy of fully opaque. Defends against an off-by-one
+        // bitmask bug regressing the policy in the future.
+        requireOpaqueOverlayColor(0xFE000000.toInt())
     }
 }

@@ -4,7 +4,7 @@
 # consumer app that depends on this library. Consumer apps do NOT need to
 # copy these into their own proguard-rules.pro.
 #
-# Two concerns:
+# Three concerns:
 #
 # 1. Log stripping. The BoomLeft family enforces a "no logs in release
 #    builds" discipline (see PrivacySuite-Core-SDK SECURITY.md). Strip all
@@ -20,11 +20,16 @@
     public static java.lang.String getStackTraceString(java.lang.Throwable);
 }
 
-# 2. Keep the library's public API surface so minification doesn't rename
-#    classes or methods that consumers call through reflection-safe entry
-#    points.
--keep public class com.boomleft.androidui.** { public *; }
+# 2. Keep ONLY the documented top-level public API. Using `**` would
+#    keep every nested package's public symbols, including future
+#    `internal`-by-convention subpackages we might add (e.g.,
+#    `com.boomleft.androidui.detail.*`). The single-`*` form keeps
+#    only types declared directly in the root package — exactly the
+#    library's stable surface.
+-keep public class com.boomleft.androidui.* { public *; }
 
-# 3. Kotlin inline-function metadata. If we ever add `inline fun` to the
-#    public API, consumers need Kotlin metadata preserved on the callsite.
+# 3. Kotlin metadata for inline + reified callsites in consumer code.
+#    KotlinMetadata is required if any public API ever becomes `inline
+#    fun`; the rest preserve generic + annotation info that consumers
+#    sometimes read reflectively (e.g., DI frameworks).
 -keepattributes KotlinMetadata, *Annotation*, InnerClasses, Signature, EnclosingMethod

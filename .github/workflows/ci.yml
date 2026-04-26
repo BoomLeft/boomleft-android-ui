@@ -10,6 +10,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Workflow-level least privilege. Override per-job if a future job needs
+# write scopes (e.g., release tagging) — never expand at the top level.
 permissions:
   contents: read
 
@@ -17,11 +19,22 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Job-scoped least privilege. The check job only needs to read source
+    # to lint and run unit tests; it must not be able to push, comment,
+    # or alter PRs even if a future action gains that capability.
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: .
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Don't leave a token in .git/config for later steps to (mis)use.
+          # No subsequent step needs to push or call the GitHub API.
+          persist-credentials: false
+          # Avoid full clone — we only need the working tree.
+          fetch-depth: 1
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

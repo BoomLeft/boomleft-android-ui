@@ -77,10 +77,6 @@ dependencies {
     compileOnly("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     compileOnly("androidx.lifecycle:lifecycle-common:2.7.0")
 
-    // AppCompat is only needed at compile time so we can reference
-    // Activity without forcing a specific version on consumers.
-    compileOnly("androidx.appcompat:appcompat:1.7.0")
-
     // Test scope — unit tests for pure-Kotlin logic.
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
