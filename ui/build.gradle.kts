@@ -74,15 +74,15 @@ dependencies {
     // pulls `androidx.lifecycle:lifecycle-runtime-*` transitively via
     // AppCompat / Activity / Compose, so there's no shared-artifact
     // conflict risk.
-    compileOnly("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    compileOnly("androidx.lifecycle:lifecycle-common:2.7.0")
+    compileOnly("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    compileOnly("androidx.lifecycle:lifecycle-common:2.10.0")
 
     // AppCompat is only needed at compile time so we can reference
     // Activity without forcing a specific version on consumers.
-    compileOnly("androidx.appcompat:appcompat:1.7.0")
+    compileOnly("androidx.appcompat:appcompat:1.7.1")
 
     // Test scope — unit tests for pure-Kotlin logic.
     testImplementation("junit:junit:4.13.2")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    testImplementation("androidx.lifecycle:lifecycle-common:2.7.0")
+    testImplementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    testImplementation("androidx.lifecycle:lifecycle-common:2.10.0")
 }
