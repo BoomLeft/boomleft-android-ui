@@ -79,7 +79,7 @@ dependencies {
 
     // AppCompat is only needed at compile time so we can reference
     // Activity without forcing a specific version on consumers.
-    compileOnly("androidx.appcompat:appcompat:1.7.0")
+    compileOnly("androidx.appcompat:appcompat:1.8.0")
 
     // Test scope — unit tests for pure-Kotlin logic.
     testImplementation("junit:junit:4.13.2")
